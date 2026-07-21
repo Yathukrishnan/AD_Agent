@@ -1,0 +1,142 @@
+"""Thin OpenRouter client for the flash model.
+
+Used for (a) competitor discovery from a product and (b) understanding ad copy
+(language/dialect detection, translation, classification). If no API key is set,
+callers should fall back to mock data — see api.py.
+"""
+import json
+import httpx
+from ..config import get_settings
+
+
+class OpenRouterClient:
+    def __init__(self) -> None:
+        self.s = get_settings()
+
+    @property
+    def enabled(self) -> bool:
+        return self.s.model_enabled
+
+    async def chat_json(self, system: str, user: str) -> dict:
+        """Call the flash model and parse a JSON object from its reply."""
+        if not self.enabled:
+            raise RuntimeError("OPENROUTER_API_KEY not set")
+        headers = {
+            "Authorization": f"Bearer {self.s.openrouter_api_key}",
+            "Content-Type": "application/json",
+            # OpenRouter attribution headers (optional but recommended):
+            "HTTP-Referer": self.s.frontend_origin,
+            "X-Title": "Gulf Ad Intelligence",
+        }
+        payload = {
+            "model": self.s.openrouter_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.s.openrouter_base_url}/chat/completions",
+                headers=headers, json=payload,
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # some models wrap JSON in prose/fences — extract the first {...}
+            start, end = content.find("{"), content.rfind("}")
+            return json.loads(content[start:end + 1])
+
+
+client = OpenRouterClient()
+
+
+ENRICH_SYSTEM = (
+    "You process competitor social/ad creatives. For EACH item return JSON "
+    '{"items":{"<i>":{"en":str,"is_ad":bool,"ad_type":str}}} where: '
+    "en = concise natural English of the text (echo it back if already English); "
+    "is_ad = true if the post is MARKETING/PROMOTIONAL content the company puts out to promote "
+    "itself or its product — this INCLUDES product launches & announcements, new features, "
+    "capabilities/model releases, offers/pricing, demos, free trials, CTAs, event/webinar promos, "
+    "partnership & customer-win announcements, and brand/awareness campaigns. "
+    "is_ad = false ONLY for clearly non-marketing posts: job/hiring posts, pure replies to users, "
+    "condolences/holiday greetings with no product, and personal/community chatter. "
+    "When in doubt for a company's own account, lean is_ad=true (a brand's own feed is mostly "
+    "marketing). ad_type = one of launch|offer|demo|feature|pricing|awareness|event|partnership|other. "
+    "If an item's native_paid is true, keep is_ad true."
+)
+
+
+async def enrich_ads(ads, cap: int = 12) -> None:
+    """One flash-model pass over gathered creatives: (a) translate Arabic/Arabizi to
+    English, (b) classify whether each reads like a PAID ad vs an organic post.
+    Mutates in place; native paid signals (is_ad already True) are preserved.
+    Silent on any failure."""
+    if not client.enabled or not ads:
+        return
+    batch = ads[:cap]
+    items = [{"i": i, "platform": a.platform, "text": a.headline_original,
+              "native_paid": a.is_ad} for i, a in enumerate(batch)]
+    try:
+        data = await client.chat_json(ENRICH_SYSTEM,
+                                      json.dumps({"items": items}, ensure_ascii=False))
+        out = data.get("items") or {}
+        for i, a in enumerate(batch):
+            r = out.get(str(i)) or out.get(i) or {}
+            en = r.get("en")
+            if en and a.language in ("arabic", "arabizi", "bilingual") and not a.headline_translation:
+                a.headline_translation = en
+            if not a.is_ad and isinstance(r.get("is_ad"), bool):
+                a.is_ad = r["is_ad"]
+                if a.is_ad and not a.ad_signal:
+                    a.ad_signal = "model"
+            if not a.ad_type and r.get("ad_type"):
+                a.ad_type = r["ad_type"]
+    except Exception:
+        pass
+
+
+# backwards-compatible alias (older call sites)
+translate_ads = enrich_ads
+
+
+DISCOVER_SYSTEM = (
+    "You are given a description of a company / product / service (and, when available, text "
+    "scraped from its website). FIRST infer what AI product or capability the company builds or "
+    "offers. THEN list the CORE AI COMPANIES that DEVELOP competing products of the same kind — "
+    "the AI-native vendors whose OWN product IS this capability (the direct competitors a product "
+    "team benchmarks against). "
+    "Scope everything to companies that are ACTIVE in the GIVEN country/region — i.e. that market, "
+    "sell, or operate there. Return TWO groups together:\n"
+    "(A) GLOBAL leaders that are active/available in the region — e.g. AI voice: ElevenLabs, "
+    "OpenAI, Deepgram, Cartesia, PlayHT, Resemble AI, Google Cloud Speech, Microsoft Azure AI, "
+    "Amazon (Polly).\n"
+    "(B) REGIONAL / NATIVE AI companies headquartered or operating in the GIVEN country/region "
+    "that BUILD the same kind of AI product. For the GCC / Arab region these include the likes of "
+    "G42 and Inception (Jais Arabic LLM), TII (Falcon), HUMAIN and SDAIA (ALLAM), AI71, Presight, "
+    "Mozn, Lucidya — choose the ones relevant to THIS product, and ALWAYS include at least 3 "
+    "regional/native players when the region has any (list them even if smaller).\n"
+    "INCLUDE only companies that BUILD the AI technology. STRICTLY EXCLUDE companies that merely "
+    "USE, resell, or integrate AI (telecoms, banks, retailers, call-centre operators, marketing "
+    "agencies, system integrators) and pure marketplaces. "
+    "Return AT LEAST 8, ranked by prominence. Strict JSON: "
+    '{"competitors":[{"name":str,"handle":str,"kind":str,"origin":"global|regional",'
+    '"tier":"leader|challenger|emerging","confidence":0..1,"reason":str}]} '
+    "where handle = the company's official social @handle WITHOUT the @ (e.g. "
+    "'elevenlabsio','openai','tiiuae'), kind = one of "
+    "'Foundation model|AI API/platform|AI startup|Big-tech AI|AI infrastructure', and "
+    "origin = 'regional' if the company is native to / based in the given region, else 'global'. "
+    "Each reason must name the concrete AI product the company develops."
+)
+
+ANALYZE_SYSTEM = (
+    "You analyse a single advertising creative's text. Detect language and dialect "
+    "(Arabic MSA / Arabic Gulf / English / bilingual / Arabizi), translate to English, "
+    "and classify. Return strict JSON: "
+    '{"language":str,"headline_translation":str,"offer_type":str,'
+    '"objective":str,"tone":str}.'
+)
