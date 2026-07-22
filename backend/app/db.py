@@ -65,7 +65,7 @@ async def init_db() -> None:
     try:
         await db.batch([
             "CREATE TABLE IF NOT EXISTS ads_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at INTEGER NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS competitors3 (id TEXT, name TEXT, tier TEXT, confidence REAL, reason TEXT, kind TEXT, handle TEXT, origin TEXT, product TEXT, country TEXT, updated_at INTEGER, PRIMARY KEY (id, product, country))",
+            "CREATE TABLE IF NOT EXISTS competitors4 (id TEXT, name TEXT, tier TEXT, confidence REAL, reason TEXT, kind TEXT, handle TEXT, origin TEXT, product TEXT, country TEXT, updated_at INTEGER, PRIMARY KEY (id, product, country))",
             "CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT, category TEXT, country TEXT, created_at INTEGER)",
         ])
     except Exception:
@@ -109,7 +109,7 @@ async def get_competitors(product) -> list[Competitor] | None:
         return None
     try:
         rs = await db.execute(
-            "SELECT id,name,tier,confidence,reason,kind,handle,origin FROM competitors3 WHERE product = ? AND country = ? AND updated_at > ?",
+            "SELECT id,name,tier,confidence,reason,kind,handle,origin FROM competitors4 WHERE product = ? AND country = ? AND updated_at > ?",
             [product.name, product.country, int(time.time()) - COMPETITOR_TTL],
         )
         if not rs.rows:
@@ -127,7 +127,7 @@ async def save_competitors(product, comps: list[Competitor]) -> None:
     now = int(time.time())
     try:
         stmts = [libsql_client.Statement(
-            "INSERT OR REPLACE INTO competitors3 (id,name,tier,confidence,reason,kind,handle,origin,product,country,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO competitors4 (id,name,tier,confidence,reason,kind,handle,origin,product,country,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             [c.id, c.name, c.tier, c.confidence, c.reason, c.kind, c.handle, c.origin, product.name, product.country, now],
         ) for c in comps]
         await db.batch(stmts)
