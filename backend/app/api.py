@@ -53,19 +53,15 @@ async def _fetch_site_text(url: str, limit: int = 2000) -> str:
 async def discover_competitors(req: DiscoverRequest):
     """Stage 2–3: derive competitors from a free-text description and/or website URL.
 
-    Read-through cache: a fresh result in the DB is returned without calling the
-    model (faster + saves quota). Otherwise discover, persist, and return.
+    REAL-TIME every request — competitors are NOT cached or stored. The model
+    analyses the description/site fresh each time and returns same-service
+    competitors that operate in the selected region.
     """
     p = req.product
-    # a stable identifier for caching/display when no explicit name was given
     if not p.name:
         p.name = (p.description[:80] or p.website or "product").strip()
-    cached = await db.get_competitors(p)
-    if cached:
-        return cached
 
     out: list[Competitor] = []
-    from_model = False
     if client.enabled:
         try:
             site_text = await _fetch_site_text(p.website)
@@ -90,15 +86,12 @@ async def discover_competitors(req: DiscoverRequest):
                     handle=(c.get("handle") or "").lstrip("@"),
                     origin=(c.get("origin") or "").lower(),
                 ))
-            from_model = bool(out)
         except Exception:
             out = []  # fall through to mock on any model/parse error
     if not out:
         out = mock.mock_competitors(p)
 
-    await db.save_product(p)
-    if from_model:               # never cache the mock fallback (a transient
-        await db.save_competitors(p, out)   # model failure must not stick for 24h)
+    # NOTE: intentionally not stored — discovery is real-time per request.
     return out
 
 
