@@ -49,6 +49,7 @@ class Ad(BaseModel):
     is_ad: bool = False        # confirmed-paid OR classified as promotional/ad-style
     ad_type: str = ""          # launch | offer | demo | feature | awareness | ...
     ad_signal: str = ""        # where the paid/ad signal came from (transparency)
+    relevant: bool = True      # False only when clearly off-topic vs the user's product
     # --- media (for in-card preview / play) ---
     thumbnail_url: str = ""    # poster / preview image
     media_url: str = ""        # direct video file (e.g. Instagram clip)

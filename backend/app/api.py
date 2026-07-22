@@ -102,47 +102,52 @@ async def discover_competitors(req: DiscoverRequest):
     return out
 
 
-async def _gather_platform(advertiser: str, p: str, country: str, handle: str = "") -> list[Ad]:
-    """Fetch one live platform, cached per (advertiser, platform, country).
+async def _gather_platform(advertiser: str, p: str, country: str, handle: str = "",
+                           topic: str = "") -> list[Ad]:
+    """Fetch one live platform, cached per (advertiser, platform, country, topic).
 
     Only NON-empty results are cached — so a transient API failure just retries
     next time instead of poisoning the cache with an empty result for 6h.
     `handle` is the competitor's official social handle (from discovery) for
-    reliable account resolution.
+    reliable account resolution; `topic` scopes the relevance judgement.
     """
-    key = f"ads:v9:{advertiser.lower()}:{p}:{country.lower()}"
+    tkey = re.sub(r"[^a-z0-9]", "", (topic or "").lower())[:24]
+    key = f"ads:v10:{advertiser.lower()}:{p}:{country.lower()}:{tkey}"
     cached = await db.cache_get_ads(key)
     if cached is not None:
         return [Ad(**d) for d in cached]
     fn = rapidapi.LIVE_FETCHERS.get(p)
     ads = await fn(advertiser, country=country, handle=handle) if fn else []
     if ads:
-        await enrich_ads(ads)   # translate Arabic→EN + classify paid/ad-style
+        await enrich_ads(ads, topic=topic)   # translate + classify paid/ad + relevance
         await db.cache_put_ads(key, [a.model_dump() for a in ads])
     return ads
 
 
 @router.get("/ads", response_model=list[Ad])
 async def list_ads(advertiser: str | None = None, platform: str | None = None,
-                   country: str = "Qatar", handle: str | None = None):
+                   country: str = "Qatar", handle: str | None = None,
+                   topic: str | None = None):
     """Stage 5–8: competitor ads, gathered from live sources, understood, scored.
 
     Live gathering needs to know *whose* ads to fetch, so it runs when an
     `advertiser` is supplied. `handle` (official social handle from discovery)
-    makes account resolution reliable. Everything degrades to mock on any gap.
+    makes account resolution reliable; `topic` scopes off-topic filtering.
+    Everything degrades to mock on any gap.
     """
     s = get_settings()
     h = handle or ""
+    t = topic or ""
     if s.rapidapi_enabled and advertiser:
         if platform in rapidapi.LIVE_PLATFORMS:
-            ads = await _gather_platform(advertiser, platform, country, h)
+            ads = await _gather_platform(advertiser, platform, country, h, t)
             if ads:
                 return sorted(ads, key=lambda a: a.performance_score, reverse=True)
             return mock.mock_ads(advertiser, platform)
         # "all": gather every live platform CONCURRENTLY (each cached independently),
         # so no platform (e.g. X/Facebook, gathered last) is starved or slow to appear.
         results = await asyncio.gather(
-            *[_gather_platform(advertiser, p, country, h) for p in rapidapi.LIVE_PLATFORMS],
+            *[_gather_platform(advertiser, p, country, h, t) for p in rapidapi.LIVE_PLATFORMS],
             return_exceptions=True,
         )
         gathered: list[Ad] = []

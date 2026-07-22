@@ -111,13 +111,20 @@ export default function Dashboard() {
   async function loadAds(comp: Competitor[]) {
     setAdsLoading(true);
     try {
-      // gather ads for the top 6 confirmed competitors
-      const top = comp.slice(0, 6);
-      const country = product.country;   // focus gathering on the selected region
+      // ALWAYS gather every native/regional competitor (no top-N cut-off — even a
+      // small startup must appear), then fill up to ~8 with the top global players.
+      const native = comp.filter((c) => c.origin === "regional");
+      const global = comp.filter((c) => c.origin !== "regional");
+      const seen = new Set<string>();
+      const gatherList = [...native, ...global]
+        .filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)))
+        .slice(0, Math.max(8, native.length));   // never drop a native company
+      const country = product.country;            // focus gathering on the selected region
+      const topic = product.name || product.category || "";   // for off-topic filtering
       let merged: Ad[] = [];
-      if (top.length) {
+      if (gatherList.length) {
         const lists = await Promise.all(
-          top.map((c) => api.ads(c.name, undefined, country, c.handle).catch(() => [] as Ad[])));
+          gatherList.map((c) => api.ads(c.name, undefined, country, c.handle, topic).catch(() => [] as Ad[])));
         merged = lists.flat();
       }
       const clean = dedupeAds(merged);   // collapse cross-posted / repeated creatives
@@ -662,7 +669,15 @@ function Feed({ ads, competitors }: { ads: Ad[]; competitors: Competitor[] }) {
   );
 
   const focused = advertiser === "all" ? originAds : (byAdv[advertiser] || []);
-  const shown = paidOnly ? focused.filter((a) => a.is_ad) : focused;
+  // Native/regional companies have NO restriction — always shown (even startups
+  // with few posts). Global players are filtered to paid (if the toggle is on)
+  // and to on-topic creatives (drop clearly off-topic ones).
+  const shown = focused.filter((a) => {
+    if (advOrigin(a.advertiser) === "regional") return true;
+    if (paidOnly && !a.is_ad) return false;
+    if (a.relevant === false) return false;
+    return true;
+  });
 
   // group the focused competitor's ads by platform
   const groups: Record<string, Ad[]> = {};

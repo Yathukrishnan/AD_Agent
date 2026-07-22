@@ -53,6 +53,7 @@ export interface Ad {
   is_ad?: boolean;
   ad_type?: string;
   ad_signal?: string;
+  relevant?: boolean;   // false only when clearly off-topic vs the product
 }
 
 export interface CompetitorSummary {
@@ -87,12 +88,13 @@ export const api = {
   health: () => get<{ status: string; data_source: string }>("/health"),
   discover: (product: Product) =>
     post<Competitor[]>("/competitors/discover", { product }),
-  ads: (advertiser?: string, platform?: string, country?: string, handle?: string) => {
+  ads: (advertiser?: string, platform?: string, country?: string, handle?: string, topic?: string) => {
     const q = new URLSearchParams();
     if (advertiser) q.set("advertiser", advertiser);
     if (platform) q.set("platform", platform);
     if (country) q.set("country", country);
     if (handle) q.set("handle", handle);
+    if (topic) q.set("topic", topic);
     const qs = q.toString();
     return get<Ad[]>(`/ads${qs ? "?" + qs : ""}`);
   },

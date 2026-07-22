@@ -56,8 +56,9 @@ client = OpenRouterClient()
 
 
 ENRICH_SYSTEM = (
-    "You process competitor social/ad creatives. For EACH item return JSON "
-    '{"items":{"<i>":{"en":str,"is_ad":bool,"ad_type":str}}} where: '
+    "You process competitor social/ad creatives. A TOPIC (the user's product area) may be given. "
+    "For EACH item return JSON "
+    '{"items":{"<i>":{"en":str,"is_ad":bool,"ad_type":str,"relevant":bool}}} where: '
     "en = concise natural English of the text (echo it back if already English); "
     "is_ad = true if the post is MARKETING/PROMOTIONAL content the company puts out to promote "
     "itself or its product — this INCLUDES product launches & announcements, new features, "
@@ -67,13 +68,17 @@ ENRICH_SYSTEM = (
     "condolences/holiday greetings with no product, and personal/community chatter. "
     "When in doubt for a company's own account, lean is_ad=true (a brand's own feed is mostly "
     "marketing). ad_type = one of launch|offer|demo|feature|pricing|awareness|event|partnership|other. "
+    "relevant = true if the creative is about the SAME product area/category as TOPIC (or if TOPIC "
+    "is empty/unknown); false ONLY when it is clearly about an UNRELATED product or subject "
+    "(e.g. TOPIC is 'AI voice agents' but the post is about gaming, sports sponsorship, or an "
+    "unrelated hardware line). Be lenient — default relevant=true unless clearly off-topic. "
     "If an item's native_paid is true, keep is_ad true."
 )
 
 
-async def enrich_ads(ads, cap: int = 12) -> None:
+async def enrich_ads(ads, topic: str = "", cap: int = 12) -> None:
     """One flash-model pass over gathered creatives: (a) translate Arabic/Arabizi to
-    English, (b) classify whether each reads like a PAID ad vs an organic post.
+    English, (b) classify PAID-ad vs organic, (c) judge topical relevance to `topic`.
     Mutates in place; native paid signals (is_ad already True) are preserved.
     Silent on any failure."""
     if not client.enabled or not ads:
@@ -81,9 +86,9 @@ async def enrich_ads(ads, cap: int = 12) -> None:
     batch = ads[:cap]
     items = [{"i": i, "platform": a.platform, "text": a.headline_original,
               "native_paid": a.is_ad} for i, a in enumerate(batch)]
+    payload = {"topic": topic or "", "items": items}
     try:
-        data = await client.chat_json(ENRICH_SYSTEM,
-                                      json.dumps({"items": items}, ensure_ascii=False))
+        data = await client.chat_json(ENRICH_SYSTEM, json.dumps(payload, ensure_ascii=False))
         out = data.get("items") or {}
         for i, a in enumerate(batch):
             r = out.get(str(i)) or out.get(i) or {}
@@ -96,6 +101,8 @@ async def enrich_ads(ads, cap: int = 12) -> None:
                     a.ad_signal = "model"
             if not a.ad_type and r.get("ad_type"):
                 a.ad_type = r["ad_type"]
+            if isinstance(r.get("relevant"), bool):
+                a.relevant = r["relevant"]
     except Exception:
         pass
 
