@@ -20,7 +20,14 @@ COMPETITOR_TTL = 24 * 3600  # cache discovered competitors for 24 hours
 
 
 def _http_url(url: str) -> str:
-    return url.replace("libsql://", "https://", 1)
+    # normalise the Turso scheme to https; tolerate a common paste typo where the
+    # leading char is dropped (e.g. "ibsql://") so a bad value degrades gracefully.
+    u = (url or "").strip()
+    if u.startswith("libsql://"):
+        return "https://" + u[len("libsql://"):]
+    if u.startswith("ibsql://"):
+        return "https://" + u[len("ibsql://"):]
+    return u
 
 
 def get_db():
@@ -29,8 +36,15 @@ def get_db():
     if not s.db_enabled:
         return None
     if _client is None:
-        _client = libsql_client.create_client(url=_http_url(s.database_url),
-                                              auth_token=s.database_token)
+        try:
+            _client = libsql_client.create_client(url=_http_url(s.database_url),
+                                                  auth_token=s.database_token)
+        except Exception as e:
+            # DB is an accelerator, never a hard dependency — a bad/misconfigured
+            # DATABASE_URL disables caching instead of crashing app startup.
+            print(f"[db] disabled — could not init client: {e}")
+            _client = None
+            return None
     return _client
 
 
