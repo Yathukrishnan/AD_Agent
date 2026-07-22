@@ -64,13 +64,17 @@ export interface CompetitorSummary {
   longest_running_days: number;
 }
 
+// In dev, Vite proxies /api → :8000. In production (e.g. Vercel), set
+// VITE_API_URL to the deployed backend origin (e.g. https://ad-agent.onrender.com).
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(`/api${path}`);
+  const r = await fetch(`${API_BASE}/api${path}`);
   if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
   return r.json();
 }
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(`/api${path}`, {
+  const r = await fetch(`${API_BASE}/api${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
