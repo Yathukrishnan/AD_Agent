@@ -113,7 +113,7 @@ async def _gather_platform(advertiser: str, p: str, country: str, handle: str = 
     reliable account resolution; `topic` scopes the relevance judgement.
     """
     tkey = re.sub(r"[^a-z0-9]", "", (topic or "").lower())[:24]
-    key = f"ads:v10:{advertiser.lower()}:{p}:{country.lower()}:{tkey}"
+    key = f"ads:v11:{advertiser.lower()}:{p}:{country.lower()}:{tkey}"
     cached = await db.cache_get_ads(key)
     if cached is not None:
         return [Ad(**d) for d in cached]

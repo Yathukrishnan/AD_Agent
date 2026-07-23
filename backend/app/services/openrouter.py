@@ -68,10 +68,14 @@ ENRICH_SYSTEM = (
     "condolences/holiday greetings with no product, and personal/community chatter. "
     "When in doubt for a company's own account, lean is_ad=true (a brand's own feed is mostly "
     "marketing). ad_type = one of launch|offer|demo|feature|pricing|awareness|event|partnership|other. "
-    "relevant = true if the creative is about the SAME product area/category as TOPIC (or if TOPIC "
-    "is empty/unknown); false ONLY when it is clearly about an UNRELATED product or subject "
-    "(e.g. TOPIC is 'AI voice agents' but the post is about gaming, sports sponsorship, or an "
-    "unrelated hardware line). Be lenient — default relevant=true unless clearly off-topic. "
+    "relevant = judge at the SPECIFIC-PRODUCT level (not the broad industry). Many competitors "
+    "sell MULTIPLE products from one account — we only want ads for the SAME product/service the "
+    "user sells. Set relevant = true when the creative promotes or features the SAME "
+    "product/service as TOPIC, or is general brand content for that same product line (or when "
+    "TOPIC is empty/unknown). Set relevant = FALSE when the creative promotes a DIFFERENT product "
+    "line the company also sells (e.g. TOPIC='potato chips' but the ad is for the brand's soft "
+    "drinks, biscuits or nuts), or an unrelated subject. Example: TOPIC='AI voice agents' -> keep "
+    "voice/speech-AI ads, drop that company's unrelated cloud-storage or gaming ads. "
     "If an item's native_paid is true, keep is_ad true."
 )
 

@@ -121,7 +121,9 @@ export default function Dashboard() {
         .filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)))
         .slice(0, 14);                            // safety cap, but keep all native + top 5
       const country = product.country;            // focus gathering on the selected region
-      const topic = product.name || product.category || "";   // for off-topic filtering
+      // precise product topic → keep only ads about OUR product (drop a competitor's
+      // other product lines). Prefer the full description for maximum precision.
+      const topic = (product.description || product.name || product.category || "").slice(0, 200);
       let merged: Ad[] = [];
       if (gatherList.length) {
         const lists = await Promise.all(
