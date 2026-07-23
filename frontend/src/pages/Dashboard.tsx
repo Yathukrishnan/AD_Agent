@@ -113,12 +113,13 @@ export default function Dashboard() {
     try {
       // ALWAYS gather every native/regional competitor (no top-N cut-off — even a
       // small startup must appear), then fill up to ~8 with the top global players.
+      // top 5 global players + ALL native/regional competitors (native emphasised)
       const native = comp.filter((c) => c.origin === "regional");
-      const global = comp.filter((c) => c.origin !== "regional");
+      const global = comp.filter((c) => c.origin !== "regional").slice(0, 5);
       const seen = new Set<string>();
       const gatherList = [...native, ...global]
         .filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)))
-        .slice(0, Math.max(8, native.length));   // never drop a native company
+        .slice(0, 14);                            // safety cap, but keep all native + top 5
       const country = product.country;            // focus gathering on the selected region
       const topic = product.name || product.category || "";   // for off-topic filtering
       let merged: Ad[] = [];
@@ -669,13 +670,14 @@ function Feed({ ads, competitors }: { ads: Ad[]; competitors: Competitor[] }) {
   );
 
   const focused = advertiser === "all" ? originAds : (byAdv[advertiser] || []);
-  // Native/regional companies have NO restriction — always shown (even startups
-  // with few posts). Global players are filtered to paid (if the toggle is on)
-  // and to on-topic creatives (drop clearly off-topic ones).
+  // Off-topic creatives are dropped for EVERYONE (safety net against wrong-account
+  // hits, e.g. a hunting video under a chips brand). Native/regional companies are
+  // then always kept (even non-"paid" posts); global players must be paid when the
+  // toggle is on.
   const shown = focused.filter((a) => {
-    if (advOrigin(a.advertiser) === "regional") return true;
-    if (paidOnly && !a.is_ad) return false;
-    if (a.relevant === false) return false;
+    if (a.relevant === false) return false;                    // drop off-topic for all
+    if (advOrigin(a.advertiser) === "regional") return true;   // native: keep on-topic posts
+    if (paidOnly && !a.is_ad) return false;                    // global: paid/promotional only
     return true;
   });
 

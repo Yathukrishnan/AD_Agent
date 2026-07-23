@@ -134,6 +134,9 @@ DISCOVER_SYSTEM = (
     "serving the UAE (ElevenLabs, plus regional players like G42/Inception). Match the industry to "
     "the product — do not mix industries.\n"
     "- Prefer the most prominent/famous players in that region first.\n"
+    "- COVERAGE: return the ~5 biggest players in that region PLUS as many genuine NATIVE/LOCAL "
+    "same-service companies as exist (aim for several) — the local/regional brands matter most, "
+    "so include them generously as long as they truly offer the same service.\n"
     "Return AT LEAST 6 (fewer only if the region genuinely has fewer). Strict JSON: "
     '{"competitors":[{"name":str,"handle":str,"kind":str,"origin":"global|regional",'
     '"tier":"leader|challenger|emerging","confidence":0..1,"reason":str}]} '

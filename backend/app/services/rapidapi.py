@@ -260,12 +260,18 @@ async def fetch_youtube(advertiser: str, country: str = "", handle: str = "", li
     target, hnorm = _norm(advertiser), _norm(handle)
 
     def _official(it: dict) -> bool:
+        # STRICT: exact brand/handle match, or the channel name CONTAINS the full
+        # brand/handle. We must NOT accept a short channel name that is merely a
+        # substring of the brand (e.g. channel "Hunter" for brand "Hunter's Gourmet"
+        # → hunting videos). So no `channel in brand` direction.
         for cn in (_norm(it.get("channelTitle")), _norm(it.get("channelHandle"))):
             if not cn:
                 continue
-            if cn == target or (len(target) >= 4 and target in cn) or (len(cn) >= 4 and cn in target):
+            if cn == target or (hnorm and cn == hnorm):
                 return True
-            if hnorm and (cn == hnorm or (len(hnorm) >= 4 and hnorm in cn)):
+            if len(target) >= 5 and target in cn:
+                return True
+            if hnorm and len(hnorm) >= 5 and hnorm in cn:
                 return True
         return False
 
@@ -490,11 +496,18 @@ async def fetch_meta_ads(advertiser: str, country: str = "", handle: str = "", l
                       json_body=body, timeout=60.0, key=(s.rapidapi_meta_key or s.rapidapi_key))
     items = (data or {}).get("items") or []
     target = _norm(advertiser)
+    hnorm = _norm(handle)
     ads: list[Ad] = []
     for it in items:
         page = _norm(it.get("pageName") or "")
-        # relevance: only keep the brand's own page (drops unrelated fuzzy hits)
-        if not (page and (page == target or target in page or page in target)):
+        # STRICT own-page match: exact, or the page name CONTAINS the full brand/
+        # handle. NOT `page in brand` (a short unrelated page must not match).
+        ok = bool(page) and (
+            page == target or (hnorm and page == hnorm)
+            or (len(target) >= 5 and target in page)
+            or (hnorm and len(hnorm) >= 5 and hnorm in page)
+        )
+        if not ok:
             continue
         text = _meta_text(it)
         if not text:
