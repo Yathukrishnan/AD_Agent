@@ -147,6 +147,38 @@ DISCOVER_SYSTEM = (
     "Each reason must, in one line, state the SAME service they provide and their presence in the region."
 )
 
+VERIFY_SYSTEM = (
+    "You are a strict competitor-verification checker. You are given a target PRODUCT/SERVICE "
+    "description, a REGION, and a list of candidate competitor companies. For EACH candidate decide "
+    "skeptically: does this company REALLY offer the SAME core product/service as the target, AND "
+    "does it actually operate in / serve that region? Exclude anything tangential, from a different "
+    "industry, or not present in the region. "
+    'Return strict JSON {"verdicts":{"<exact candidate name>":{"same_service":bool,"in_region":bool,'
+    '"confidence":0..1}}} using each candidate\'s EXACT name as the key.'
+)
+
+
+async def verify_competitors(description: str, region: str, names: list[str], cap: int = 16):
+    """Second, adversarial pass: keep only candidates that truly offer the SAME
+    service in-region. Returns a set of names to KEEP, or None to skip filtering
+    (model off / error) so we never accidentally drop everything."""
+    if not client.enabled or not names:
+        return None
+    payload = {"target": description or "", "region": region or "", "candidates": names[:cap]}
+    try:
+        data = await client.chat_json(VERIFY_SYSTEM, json.dumps(payload, ensure_ascii=False))
+        v = data.get("verdicts") or {}
+        keep = set()
+        for n in names:
+            r = v.get(n) or v.get(n.strip()) or {}
+            if (r.get("same_service") and r.get("in_region", True)
+                    and float(r.get("confidence", 0) or 0) >= 0.5):
+                keep.add(n)
+        return keep
+    except Exception:
+        return None
+
+
 ANALYZE_SYSTEM = (
     "You analyse a single advertising creative's text. Detect language and dialect "
     "(Arabic MSA / Arabic Gulf / English / bilingual / Arabizi), translate to English, "

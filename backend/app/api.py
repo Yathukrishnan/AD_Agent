@@ -8,7 +8,8 @@ from .schemas import (DiscoverRequest, Competitor, Ad, CompetitorSummary,
                       AnalyzeRequest, Product)
 from . import mock, db
 from .config import get_settings
-from .services.openrouter import client, enrich_ads, DISCOVER_SYSTEM, ANALYZE_SYSTEM
+from .services.openrouter import (client, enrich_ads, verify_competitors,
+                                   DISCOVER_SYSTEM, ANALYZE_SYSTEM)
 from .services import rapidapi
 
 router = APIRouter(prefix="/api")
@@ -86,6 +87,13 @@ async def discover_competitors(req: DiscoverRequest):
                     handle=(c.get("handle") or "").lstrip("@"),
                     origin=(c.get("origin") or "").lower(),
                 ))
+            # Layer 3 — adversarial verification: keep only candidates that truly
+            # offer the same service in-region (drops tangential/wrong-industry hits).
+            if out:
+                keep = await verify_competitors(p.description or p.name, p.country,
+                                                [c.name for c in out])
+                if keep:                        # only filter when verification succeeded
+                    out = [c for c in out if c.name in keep]
         except Exception:
             out = []  # fall through to mock on any model/parse error
     if not out:
